@@ -226,6 +226,19 @@ button:disabled {
   border-color: #f1c4cc;
 }
 
+.save-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.save-message {
+  color: #176d4b;
+  font-size: 12px;
+  font-weight: 700;
+}
+
 .rule-list {
   display: grid;
   gap: 8px;

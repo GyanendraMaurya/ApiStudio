@@ -38,6 +38,7 @@ function Options() {
   const [selectedId, setSelectedId] = useState<string>();
   const [draft, setDraft] = useState<ApiRule>(createBlankRule);
   const [errors, setErrors] = useState<string[]>([]);
+  const [saveMessage, setSaveMessage] = useState<string>();
 
   useEffect(() => {
     void load();
@@ -74,6 +75,7 @@ function Options() {
     setSelectedId(rule.id);
     setDraft(rule);
     setErrors([]);
+    setSaveMessage(undefined);
   }
 
   function startNewRule() {
@@ -81,6 +83,7 @@ function Options() {
     setSelectedId(undefined);
     setDraft(next);
     setErrors([]);
+    setSaveMessage(undefined);
   }
 
   async function saveRule() {
@@ -88,6 +91,7 @@ function Options() {
     setErrors(validationErrors);
 
     if (validationErrors.length > 0) {
+      setSaveMessage(undefined);
       return;
     }
 
@@ -101,6 +105,8 @@ function Options() {
     setRules(nextRules);
     setSelectedId(rule.id);
     setDraft(rule);
+    setSaveMessage('Saved successfully');
+    window.setTimeout(() => setSaveMessage(undefined), 2200);
   }
 
   async function deleteRule(ruleId: string) {
@@ -161,7 +167,7 @@ function Options() {
         </aside>
 
         <section className="stack">
-          <RuleEditor draft={draft} setDraft={setDraft} errors={errors} onSave={saveRule} />
+          <RuleEditor draft={draft} setDraft={setDraft} errors={errors} saveMessage={saveMessage} onSave={saveRule} />
           <RequestLog logs={logs} onClear={clearLogs} />
         </section>
       </section>
@@ -173,10 +179,11 @@ interface RuleEditorProps {
   draft: ApiRule;
   setDraft: (rule: ApiRule) => void;
   errors: string[];
+  saveMessage?: string;
   onSave: () => void;
 }
 
-function RuleEditor({ draft, setDraft, errors, onSave }: RuleEditorProps) {
+function RuleEditor({ draft, setDraft, errors, saveMessage, onSave }: RuleEditorProps) {
   function update(next: Partial<ApiRule>) {
     setDraft({ ...draft, ...next });
   }
@@ -286,7 +293,10 @@ function RuleEditor({ draft, setDraft, errors, onSave }: RuleEditorProps) {
           </div>
         )}
 
-        <button className="btn primary" onClick={onSave}>Save rule</button>
+        <div className="save-row">
+          <button className="btn primary" onClick={onSave}>Save rule</button>
+          {saveMessage && <span className="save-message">{saveMessage}</span>}
+        </div>
       </div>
     </section>
   );
