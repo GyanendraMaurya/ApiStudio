@@ -84,6 +84,10 @@ function Popup() {
     void chrome.runtime.openOptionsPage();
   }
 
+  function openStudio() {
+    void chrome.tabs.create({ url: chrome.runtime.getURL('studio.html') });
+  }
+
   return (
     <main className="popup-shell stack">
       <section className="brand">
@@ -105,6 +109,7 @@ function Popup() {
           <button className={`btn ${enabled ? 'danger' : 'primary'}`} disabled={!tab || busy} onClick={toggle}>
             {busy ? 'Working...' : enabled ? 'Disable interception' : 'Enable interception'}
           </button>
+          <button className="btn ghost" onClick={openStudio}>Open Studio</button>
           <button className="btn ghost" onClick={openOptions}>Open rules</button>
         </div>
       </section>

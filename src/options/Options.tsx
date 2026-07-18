@@ -2,35 +2,12 @@ import React, { useEffect, useMemo, useState } from 'react';
 import { createRoot } from 'react-dom/client';
 import '../ui/styles.css';
 import { StorageService } from '../services/StorageService';
-import { createId } from '../shared/base64';
+import { createBlankRule } from '../services/RuleFactory';
 import type { ApiRule, HttpMethod, RequestLogEntry, RuleActionType, UrlMatchType } from '../shared/types';
 
 const storage = new StorageService();
 const METHODS: HttpMethod[] = ['ANY', 'GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'HEAD', 'OPTIONS'];
 const ACTIONS: RuleActionType[] = ['replaceBody', 'modifyJson', 'customStatus', 'delay', 'block'];
-
-function createBlankRule(): ApiRule {
-  const now = Date.now();
-  return {
-    id: createId('rule'),
-    name: 'New rule',
-    enabled: true,
-    match: {
-      urlType: 'contains',
-      urlValue: '',
-      method: 'ANY'
-    },
-    action: {
-      type: 'replaceBody',
-      responseBody: '{\n  "ok": true\n}',
-      statusCode: 200,
-      delayMs: 0,
-      transformCode: 'return input;'
-    },
-    createdAt: now,
-    updatedAt: now
-  };
-}
 
 function Options() {
   const [rules, setRules] = useState<ApiRule[]>([]);
@@ -63,11 +40,13 @@ function Options() {
 
   async function load() {
     const snapshot = await storage.getSnapshot();
+    const ruleIdFromUrl = new URLSearchParams(window.location.search).get('ruleId');
+    const selectedRule = snapshot.rules.find((rule) => rule.id === ruleIdFromUrl) ?? snapshot.rules[0];
     setRules(snapshot.rules);
     setLogs(snapshot.logs);
-    if (snapshot.rules[0]) {
-      setSelectedId(snapshot.rules[0].id);
-      setDraft(snapshot.rules[0]);
+    if (selectedRule) {
+      setSelectedId(selectedRule.id);
+      setDraft(selectedRule);
     }
   }
 
@@ -131,6 +110,10 @@ function Options() {
     setLogs([]);
   }
 
+  function openStudio() {
+    void chrome.tabs.create({ url: chrome.runtime.getURL('studio.html') });
+  }
+
   return (
     <main className="app-shell">
       <header className="topbar">
@@ -138,7 +121,10 @@ function Options() {
           <h1>API Studio</h1>
           <span>Rules, response transforms, and request activity</span>
         </div>
-        <button className="btn" onClick={startNewRule}>New rule</button>
+        <div className="inline">
+          <button className="btn" onClick={openStudio}>Open Studio</button>
+          <button className="btn" onClick={startNewRule}>New rule</button>
+        </div>
       </header>
 
       <section className="layout">

@@ -8,6 +8,7 @@ The extension has four main runtime surfaces:
 
 - Popup: current-tab enable/disable control.
 - Options page: rule editor and request log.
+- Studio page: full-tab request inspector and rule creation from real requests.
 - Background service worker: interception engine.
 - Offscreen plus sandbox pages: isolated JavaScript transform execution for JSON responses.
 
@@ -23,6 +24,7 @@ The extension has four main runtime surfaces:
 8. `DebuggerManager` checks saved rules through `StorageService` and `RuleEngine`.
 9. The request is continued, blocked, delayed, or fulfilled with a modified response.
 10. A request log entry is saved to `chrome.storage.local`.
+11. The Studio page reads logs and lets the user inspect matched, modified, blocked, or discovered requests.
 
 ## Chrome Debugger And CDP
 
@@ -45,16 +47,18 @@ The background worker attaches the debugger to that tab ID. From then on, Chrome
 
 Current scope is current-tab only. Other tabs are unaffected until interception is enabled for them.
 
-## Options Page To Interception Connection
+## Options And Studio To Interception Connection
 
-The options page and background worker communicate through shared extension storage.
+The options page, Studio page, and background worker communicate through shared extension storage.
 
 - The options page writes rules to `chrome.storage.local`.
+- The Studio page writes starter rules to `chrome.storage.local` when the user creates a rule from a request.
+- After creating a rule, Studio can open `options.html?ruleId=...`; the Options page reads that query parameter and selects the rule for editing.
 - The background worker reads rules from `chrome.storage.local` whenever a request is paused.
 - The background worker writes logs to `chrome.storage.local`.
-- The options page listens for storage changes and refreshes its rule/log UI.
+- The options and Studio pages listen for storage changes and refresh their UI.
 
-There is no direct connection from the options page to a website tab.
+There is no direct connection from the options or Studio page to a website tab.
 
 ## Storage
 
@@ -72,7 +76,7 @@ Current storage shape:
 }
 ```
 
-Rules are user configuration. Tab states track whether a tab is enabled/attached. Logs keep the latest 100 request events.
+Rules are user configuration. Tab states track whether a tab is enabled/attached. Studio settings store UI/runtime options such as Discover mode. Logs keep the latest 100 request events. Request logs may include status code, duration, original response preview, modified response preview, matched rule, and action metadata. Response previews are capped so the extension does not store large bodies.
 
 ## Rule Engine
 
@@ -90,15 +94,17 @@ Current behavior: first enabled matching rule wins.
 
 At request stage:
 
-- If no rule matches, API Studio calls `Fetch.continueRequest`.
+- If no rule matches and Discover mode is off, API Studio calls `Fetch.continueRequest` without logging.
+- If no rule matches and Discover mode is on, API Studio pauses again at response stage to capture a capped original response preview, logs it as `discovered`, fulfills the original response back to the page, and lets the Studio page create a starter rule from it.
 - If the action is `block`, API Studio calls `Fetch.failRequest`.
 - Otherwise, it stores the matched rule by CDP request ID and continues with `interceptResponse: true`.
 
 At response stage:
 
 - `delay` waits and then continues the original response.
-- `replaceBody` and `customStatus` call `Fetch.fulfillRequest`.
-- `modifyJson` reads the original body, transforms JSON in the sandbox flow, and fulfills with transformed JSON.
+- `replaceBody` and `customStatus` read the original response body, fulfill the modified response, and log original/modified previews.
+- `modifyJson` reads the original body, transforms JSON in the sandbox flow, fulfills with transformed JSON, and logs original/modified previews.
+- Fulfilled responses store small previews for inspection and rule creation.
 
 `Fetch.fulfillRequest` requires base64-encoded response bodies, handled by `src/shared/base64.ts`.
 
@@ -123,4 +129,6 @@ The sandbox page is declared in `manifest.json` under `sandbox.pages` and has a 
 - Only one debugger client can attach to a tab at a time; Chrome DevTools or another extension may conflict.
 - The current implementation is Chrome/Chromium focused.
 - Service workers can be suspended by Chrome; persistent state must live in storage, not only in memory.
-- Request modification, header editing, profiles, import/export, WebSockets, HAR recording, and full-tab studio UI are future features.
+- Studio is intentionally quiet by default. Unmatched request capture only happens when Discover mode is enabled.
+- Studio currently shows recent locally stored logs, not a long-term database or backend-backed history.
+- Request modification, header editing, profiles, import/export, WebSockets, and HAR recording are future features.

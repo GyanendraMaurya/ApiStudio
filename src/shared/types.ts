@@ -37,13 +37,23 @@ export interface InterceptionState {
   updatedAt: number;
 }
 
-export type LogResult = 'matched' | 'continued' | 'fulfilled' | 'blocked' | 'error';
+export type LogResult = 'matched' | 'continued' | 'fulfilled' | 'blocked' | 'discovered' | 'error';
+
+export interface StudioSettings {
+  discoverEnabled: boolean;
+}
 
 export interface RequestLogEntry {
   id: string;
+  requestId?: string;
   tabId: number;
   url: string;
   method: string;
+  statusCode?: number;
+  durationMs?: number;
+  responseBodyPreview?: string;
+  originalResponsePreview?: string;
+  modifiedResponsePreview?: string;
   ruleId?: string;
   ruleName?: string;
   actionType?: RuleActionType;
@@ -56,6 +66,7 @@ export interface AppStorageSnapshot {
   rules: ApiRule[];
   tabStates: Record<string, InterceptionState>;
   logs: RequestLogEntry[];
+  studioSettings: StudioSettings;
 }
 
 export interface MatchResult {

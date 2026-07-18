@@ -30,6 +30,8 @@ Use `rg` to search before assuming where code lives.
 - Rule behavior: first enabled matching rule wins.
 - User JavaScript transforms: sandboxed page reached through an offscreen document.
 - Logs: latest 100 entries in extension local storage.
+- Studio page: full-tab request inspector backed by local request logs.
+- Discover mode: opt-in unmatched Fetch/XHR capture for creating rules from real traffic.
 
 ## Common Workflows
 
@@ -68,6 +70,8 @@ Reload behavior:
 - Put pure matching or transformation policy in testable service modules.
 - Keep Chrome API calls in background or service wrappers.
 - Keep UI components focused on reading/writing typed state.
+- Keep advanced UI inside Studio or progressive detail panels so popup/options remain simple.
+- Keep Discover mode off by default; avoid turning Studio into a noisy Network tab clone.
 - Update shared types in `src/shared/types.ts` before wiring UI/background behavior.
 - Add or update tests for rule matching, storage shape, and any pure behavior.
 - Avoid relying on service worker memory for important state; persist durable data in `chrome.storage.local`.

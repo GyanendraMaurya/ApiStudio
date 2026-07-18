@@ -30,9 +30,11 @@ interface ResponseBodyResult {
   base64Encoded: boolean;
 }
 
-interface PendingResponseAction {
-  rule: ApiRule;
-}
+type PendingResponseAction =
+  | { mode: 'rule'; rule: ApiRule; startedAt: number }
+  | { mode: 'discover'; startedAt: number };
+
+const RESPONSE_PREVIEW_LIMIT = 8_000;
 
 export class DebuggerManager {
   private readonly attachedTabs = new Set<number>();
@@ -142,6 +144,7 @@ export class DebuggerManager {
       }
     } catch (error) {
       await this.log(tabId, event.request, {
+        requestId: event.requestId,
         result: 'error',
         error: error instanceof Error ? error.message : String(error)
       });
@@ -164,14 +167,29 @@ export class DebuggerManager {
     }
 
     if (!match.rule) {
-      await this.continueRequest(tabId, event.requestId);
+      const settings = await this.storage.getStudioSettings();
+      if (!settings.discoverEnabled) {
+        await this.continueRequest(tabId, event.requestId);
+        return;
+      }
+
+      this.pendingResponses.set(event.requestId, { mode: 'discover', startedAt: Date.now() });
+      await sendDebuggerCommand<unknown>({ tabId }, 'Fetch.continueRequest', {
+        requestId: event.requestId,
+        interceptResponse: true
+      });
       return;
     }
 
     const { rule } = match;
 
     if (rule.action.type === 'block') {
-      await this.log(tabId, event.request, { rule, result: 'blocked' });
+      await this.log(tabId, event.request, {
+        requestId: event.requestId,
+        rule,
+        result: 'blocked',
+        durationMs: 0
+      });
       // Fetch.failRequest tells CDP to fail the paused request before it leaves
       // the browser network stack. This is the MVP blocking behavior.
       await sendDebuggerCommand<unknown>({ tabId }, 'Fetch.failRequest', {
@@ -181,8 +199,7 @@ export class DebuggerManager {
       return;
     }
 
-    this.pendingResponses.set(event.requestId, { rule });
-    await this.log(tabId, event.request, { rule, result: 'matched' });
+    this.pendingResponses.set(event.requestId, { mode: 'rule', rule, startedAt: Date.now() });
 
     // Fetch.continueRequest resumes the paused request. The interceptResponse
     // flag asks CDP to pause the same request again after response headers
@@ -202,34 +219,81 @@ export class DebuggerManager {
       return;
     }
 
+    if (pending.mode === 'discover') {
+      await this.handleDiscoverResponse(tabId, event, pending.startedAt);
+      return;
+    }
+
     const { rule } = pending;
     const action = rule.action;
     const delayMs = action.delayMs ?? 0;
+    const statusCode = action.statusCode ?? event.responseStatusCode ?? 200;
 
     if (delayMs > 0) {
       await new Promise((resolve) => setTimeout(resolve, delayMs));
     }
 
     if (action.type === 'delay') {
-      await this.log(tabId, event.request, { rule, result: 'fulfilled' });
+      await this.log(tabId, event.request, {
+        requestId: event.requestId,
+        rule,
+        result: 'fulfilled',
+        statusCode,
+        durationMs: Date.now() - pending.startedAt
+      });
       await this.continueRequest(tabId, event.requestId);
       return;
     }
 
-    const statusCode = action.statusCode ?? event.responseStatusCode ?? 200;
     const headers = this.withJsonHeader(event.responseHeaders ?? []);
 
     if (action.type === 'replaceBody' || action.type === 'customStatus') {
-      await this.fulfill(tabId, event.requestId, statusCode, headers, action.responseBody ?? '');
-      await this.log(tabId, event.request, { rule, result: 'fulfilled' });
+      const original = await this.getResponseBody(tabId, event.requestId);
+      const body = action.responseBody ?? '';
+      await this.fulfill(tabId, event.requestId, statusCode, headers, body);
+      await this.log(tabId, event.request, {
+        requestId: event.requestId,
+        rule,
+        result: 'fulfilled',
+        statusCode,
+        durationMs: Date.now() - pending.startedAt,
+        responseBodyPreview: this.preview(body),
+        originalResponsePreview: this.previewBody(original),
+        modifiedResponsePreview: this.preview(body)
+      });
       return;
     }
 
     if (action.type === 'modifyJson') {
-      const original = await this.getResponseText(tabId, event.requestId);
-      const transformed = await this.transformJson(original, action);
+      const original = await this.getResponseBody(tabId, event.requestId);
+      const originalText = this.responseBodyToText(original);
+      let transformed: string;
+      try {
+        transformed = await this.transformJson(originalText, action);
+      } catch (error) {
+        await this.fulfillOriginal(tabId, event.requestId, event.responseStatusCode ?? 200, event.responseHeaders ?? [], original);
+        await this.log(tabId, event.request, {
+          requestId: event.requestId,
+          rule,
+          result: 'error',
+          statusCode: event.responseStatusCode,
+          durationMs: Date.now() - pending.startedAt,
+          originalResponsePreview: this.preview(originalText),
+          error: error instanceof Error ? error.message : String(error)
+        });
+        return;
+      }
       await this.fulfill(tabId, event.requestId, statusCode, headers, transformed);
-      await this.log(tabId, event.request, { rule, result: 'fulfilled' });
+      await this.log(tabId, event.request, {
+        requestId: event.requestId,
+        rule,
+        result: 'fulfilled',
+        statusCode,
+        durationMs: Date.now() - pending.startedAt,
+        responseBodyPreview: this.preview(transformed),
+        originalResponsePreview: this.preview(originalText),
+        modifiedResponsePreview: this.preview(transformed)
+      });
       return;
     }
 
@@ -255,13 +319,21 @@ export class DebuggerManager {
     });
   }
 
-  private async getResponseText(tabId: number, requestId: string): Promise<string> {
+  private async fulfillOriginal(tabId: number, requestId: string, responseCode: number, responseHeaders: HeaderEntry[], body: ResponseBodyResult): Promise<void> {
+    await sendDebuggerCommand<unknown>({ tabId }, 'Fetch.fulfillRequest', {
+      requestId,
+      responseCode,
+      responseHeaders: this.withoutContentEncoding(responseHeaders),
+      body: body.base64Encoded ? body.body : toBase64(body.body)
+    });
+  }
+
+  private async getResponseBody(tabId: number, requestId: string): Promise<ResponseBodyResult> {
     // Fetch.getResponseBody is only valid while the request is paused at the
     // response stage. API Studio uses it before fulfilling with transformed JSON.
-    const response = await sendDebuggerCommand<ResponseBodyResult>({ tabId }, 'Fetch.getResponseBody', {
+    return sendDebuggerCommand<ResponseBodyResult>({ tabId }, 'Fetch.getResponseBody', {
       requestId
     });
-    return response.base64Encoded ? fromBase64(response.body) : response.body;
   }
 
   private async transformJson(originalBody: string, action: RuleAction): Promise<string> {
@@ -271,21 +343,48 @@ export class DebuggerManager {
   }
 
   private withJsonHeader(headers: HeaderEntry[]): HeaderEntry[] {
-    const filtered = headers.filter((header) => !['content-length', 'content-encoding'].includes(header.name.toLowerCase()));
+    const filtered = this.withoutContentEncoding(headers);
     const hasContentType = filtered.some((header) => header.name.toLowerCase() === 'content-type');
     return hasContentType ? filtered : [{ name: 'Content-Type', value: 'application/json; charset=utf-8' }, ...filtered];
+  }
+
+  private withoutContentEncoding(headers: HeaderEntry[]): HeaderEntry[] {
+    return headers.filter((header) => !['content-length', 'content-encoding'].includes(header.name.toLowerCase()));
+  }
+
+  private async handleDiscoverResponse(tabId: number, event: FetchRequestPausedEvent, startedAt: number): Promise<void> {
+    const statusCode = event.responseStatusCode ?? 200;
+    const headers = event.responseHeaders ?? [];
+    const original = await this.getResponseBody(tabId, event.requestId);
+    const originalText = this.responseBodyToText(original);
+
+    await this.fulfillOriginal(tabId, event.requestId, statusCode, headers, original);
+    await this.log(tabId, event.request, {
+      requestId: event.requestId,
+      result: 'discovered',
+      statusCode,
+      durationMs: Date.now() - startedAt,
+      responseBodyPreview: this.preview(originalText),
+      originalResponsePreview: this.preview(originalText)
+    });
   }
 
   private async log(
     tabId: number,
     request: FetchRequest,
-    data: Pick<RequestLogEntry, 'result' | 'error'> & { rule?: ApiRule }
+    data: Pick<RequestLogEntry, 'result' | 'error' | 'requestId' | 'statusCode' | 'durationMs' | 'responseBodyPreview' | 'originalResponsePreview' | 'modifiedResponsePreview'> & { rule?: ApiRule }
   ): Promise<void> {
     await this.storage.addLog({
       id: createId('log'),
+      requestId: data.requestId,
       tabId,
       url: request.url,
       method: request.method,
+      statusCode: data.statusCode,
+      durationMs: data.durationMs,
+      responseBodyPreview: data.responseBodyPreview,
+      originalResponsePreview: data.originalResponsePreview,
+      modifiedResponsePreview: data.modifiedResponsePreview,
       ruleId: data.rule?.id,
       ruleName: data.rule?.name,
       actionType: data.rule?.action.type,
@@ -293,5 +392,25 @@ export class DebuggerManager {
       error: data.error,
       createdAt: Date.now()
     });
+  }
+
+  private preview(body: string): string {
+    return body.length > RESPONSE_PREVIEW_LIMIT ? `${body.slice(0, RESPONSE_PREVIEW_LIMIT)}\n...` : body;
+  }
+
+  private previewBody(body: ResponseBodyResult): string {
+    return this.preview(this.responseBodyToText(body));
+  }
+
+  private responseBodyToText(body: ResponseBodyResult): string {
+    if (!body.base64Encoded) {
+      return body.body;
+    }
+
+    try {
+      return fromBase64(body.body);
+    } catch {
+      return '[binary response body]';
+    }
   }
 }

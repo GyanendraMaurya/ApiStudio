@@ -10,11 +10,12 @@ Root folder:
 
 - `package.json`: npm scripts and dependencies.
 - `package-lock.json`: locked dependency versions.
-- `vite.config.ts`: Vite multi-entry build for popup, options, background, offscreen, and sandbox.
+- `vite.config.ts`: Vite multi-entry build for popup, options, Studio, background, offscreen, and sandbox.
 - `tsconfig.json`: strict TypeScript configuration.
 - `public/manifest.json`: Manifest V3 extension manifest copied into `dist`.
 - `popup.html`: popup entry HTML.
 - `options.html`: options page entry HTML.
+- `studio.html`: full-page Studio entry HTML.
 - `offscreen.html`: offscreen document entry HTML.
 - `sandbox.html`: sandbox iframe entry HTML.
 - `README.md`: project overview and development workflow.
@@ -50,14 +51,24 @@ React popup page.
 - `Popup.tsx`: active-tab lookup, enable/disable interception, open options.
 
 ```text
+src/studio
+```
+
+React full-page request inspector.
+
+- `Studio.tsx`: request timeline, details panel, filters, and create-rule-from-request action.
+
+```text
 src/services
 ```
 
 Shared services used across extension surfaces.
 
 - `RuleEngine.ts`: pure rule matching logic.
+- `RuleFactory.ts`: creates blank rules and starter rules from request logs.
 - `StorageService.ts`: typed wrapper around `chrome.storage.local`.
 - `RuleEngine.test.ts`: rule matching tests.
+- `RuleFactory.test.ts`: rule creation tests.
 - `StorageService.test.ts`: storage constants/default tests.
 
 ```text

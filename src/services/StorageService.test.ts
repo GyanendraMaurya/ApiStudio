@@ -6,12 +6,15 @@ describe('StorageService constants', () => {
     expect(DEFAULT_STORAGE).toEqual({
       rules: [],
       tabStates: {},
-      logs: []
+      logs: [],
+      studioSettings: {
+        discoverEnabled: false
+      }
     });
   });
 
   it('keeps the storage keys explicit', () => {
-    expect(StorageService.storageKeys()).toEqual(['rules', 'tabStates', 'logs']);
+    expect(StorageService.storageKeys()).toEqual(['rules', 'tabStates', 'logs', 'studioSettings']);
   });
 
   it('caps logs at a small local history size', () => {

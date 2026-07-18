@@ -5,7 +5,10 @@ export const MAX_LOG_ENTRIES = 100;
 export const DEFAULT_STORAGE: AppStorageSnapshot = {
   rules: [],
   tabStates: {},
-  logs: []
+  logs: [],
+  studioSettings: {
+    discoverEnabled: false
+  }
 };
 
 type StorageKey = keyof AppStorageSnapshot;
@@ -80,7 +83,22 @@ export class StorageService {
     await chromeSet({ logs: [] });
   }
 
+  async getStudioSettings() {
+    const data = await chromeGet({ studioSettings: DEFAULT_STORAGE.studioSettings });
+    return data.studioSettings;
+  }
+
+  async setDiscoverEnabled(discoverEnabled: boolean) {
+    const data = await chromeGet({ studioSettings: DEFAULT_STORAGE.studioSettings });
+    const studioSettings = {
+      ...data.studioSettings,
+      discoverEnabled
+    };
+    await chromeSet({ studioSettings });
+    return studioSettings;
+  }
+
   static storageKeys(): StorageKey[] {
-    return ['rules', 'tabStates', 'logs'];
+    return ['rules', 'tabStates', 'logs', 'studioSettings'];
   }
 }

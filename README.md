@@ -5,10 +5,33 @@ API Studio is a Manifest V3 Chrome extension for intercepting and modifying API 
 ## What It Does
 
 - Enables/disables interception for the current Chrome tab from the popup.
+- Opens a full-page Studio view for inspecting recent intercepted requests.
 - Attaches `chrome.debugger` to that tab and uses Chrome DevTools Protocol Fetch commands.
 - Matches Fetch/XHR requests against locally saved rules.
 - Supports response replacement, JSON transform scripts, custom status codes, artificial delay, and request blocking.
+- Creates starter rules from real request log entries.
 - Stores rules, tab state, and recent request logs in `chrome.storage.local`.
+
+## How To Use The Studio View
+
+Studio is intentionally quiet by default. It is not trying to replace Chrome DevTools Network.
+
+Normal workflow:
+
+1. Create or enable rules from the Rules page.
+2. Enable interception from the popup for the current tab.
+3. Open Studio to inspect what matched rules did.
+4. For modified responses, Studio can show original and modified response previews.
+
+Rule discovery workflow:
+
+1. Open Studio.
+2. Turn on Discover requests.
+3. Use the website normally.
+4. Click a discovered API request.
+5. Create a starter rule from that real response.
+6. Use the temporary Open rule button to jump straight into editing it.
+7. Turn Discover requests off again to keep the timeline clean.
 
 ## Read This First
 
